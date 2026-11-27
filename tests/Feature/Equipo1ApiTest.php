@@ -50,4 +50,29 @@ class Equipo1ApiTest extends TestCase
             ->assertJsonValidationErrors(['probability'])
             ->assertJsonMissingPath('trace');
     }
+
+    public function test_api_returns_full_mitigation_simulation(): void
+    {
+        $this->postJson(self::ENDPOINT, $this->validPayload())
+            ->assertOk()
+            ->assertJsonPath('mitigation_simulation.current_risk', 90)
+            ->assertJsonPath('mitigation_simulation.projected_risk', 36)
+            ->assertJsonPath('mitigation_simulation.risk_difference', 54)
+            ->assertJsonPath('mitigation_simulation.projected_level', 'ALTO');
+    }
+
+    public function test_api_reports_no_additional_mitigation_with_all_controls(): void
+    {
+        $data = array_replace($this->validPayload(), [
+            'mfa_enabled' => true,
+            'patches_updated' => true,
+            'monitoring_enabled' => true,
+        ]);
+
+        $this->postJson(self::ENDPOINT, $data)
+            ->assertOk()
+            ->assertJsonPath('residual_risk', 36)
+            ->assertJsonPath('mitigation_simulation.projected_risk', 36)
+            ->assertJsonPath('mitigation_simulation.risk_difference', 0);
+    }
 }

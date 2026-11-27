@@ -238,6 +238,33 @@ class Equipo1Controller extends Controller
 
     /**
      * @param  RiskInput  $data
+     * @return array{current_risk: int, projected_risk: int, risk_difference: int, projected_level: string}
+     */
+    public function simulateMitigation(array $data, int $currentRisk): array
+    {
+        // La simulación modifica una copia y conserva el escenario original.
+        $projectedData = $data;
+
+        foreach (array_keys(self::CONTROL_WEIGHTS) as $control) {
+            $projectedData[$control] = true;
+        }
+
+        $initialRisk = $this->calculateInitialRisk($data['criticality'], $data['probability'], $data['impact']);
+        $adjustedTenths = $this->calculateExposure($initialRisk, $data['internet_exposed']);
+        $reduction = $this->calculateReduction($projectedData);
+        $projectedRisk = $this->calculateResidualRisk($adjustedTenths, $reduction);
+        $conditions = $this->detectCriticalConditions($projectedData);
+
+        return [
+            'current_risk' => $currentRisk,
+            'projected_risk' => $projectedRisk,
+            'risk_difference' => $currentRisk - $projectedRisk,
+            'projected_level' => $this->classifyRisk($projectedRisk, $conditions['minimum_level']),
+        ];
+    }
+
+    /**
+     * @param  RiskInput  $data
      * @return array<string, mixed>
      */
     public function assess(array $data): array
@@ -267,6 +294,7 @@ class Equipo1Controller extends Controller
             'critical_findings' => $conditions['findings'],
             'observations' => $conditions['observations'],
             ...$this->generateRecommendations($data),
+            'mitigation_simulation' => $this->simulateMitigation($data, $residualRisk),
         ];
     }
 
