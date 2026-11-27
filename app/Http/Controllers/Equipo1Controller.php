@@ -192,6 +192,11 @@ class Equipo1Controller extends Controller
             $findings[] = 'Aplicación web expuesta sin MFA y sin parches.';
         }
 
+        if ($data['asset_type'] === 'network' && $data['criticality'] >= 4 && $data['internet_exposed'] && ! $data['monitoring_enabled']) {
+            $minimumLevel = max($minimumLevel, 1);
+            $findings[] = 'Red crítica expuesta sin monitoreo.';
+        }
+
         if ($data['internet_exposed'] && ! $data['monitoring_enabled']) {
             $observations[] = 'El sistema está expuesto a Internet sin monitoreo.';
         }
@@ -263,6 +268,43 @@ class Equipo1Controller extends Controller
         ];
     }
 
+    public function calculateInternalRisk(int $initialRisk, int $reduction): int
+    {
+        return $this->calculateResidualRisk($this->calculateExposure($initialRisk, false), $reduction);
+    }
+
+    /**
+     * @param  RiskInput  $data
+     */
+    public function countActiveControls(array $data): int
+    {
+        $active = 0;
+
+        foreach (array_keys(self::CONTROL_WEIGHTS) as $control) {
+            if ($data[$control]) {
+                $active++;
+            }
+        }
+
+        return $active;
+    }
+
+    public function classificationWasRaised(int $score, int $minimumLevel): bool
+    {
+        return $this->classifyRisk($score) !== $this->classifyRisk($score, $minimumLevel);
+    }
+
+    public function getErrorCode(int $status): string
+    {
+        return match ($status) {
+            400 => 'INVALID_JSON',
+            413 => 'PAYLOAD_TOO_LARGE',
+            415 => 'INVALID_CONTENT_TYPE',
+            422 => 'VALIDATION_ERROR',
+            default => 'INTERNAL_ERROR',
+        };
+    }
+
     /**
      * @param  RiskInput  $data
      * @return array<string, mixed>
@@ -295,6 +337,10 @@ class Equipo1Controller extends Controller
             'observations' => $conditions['observations'],
             ...$this->generateRecommendations($data),
             'mitigation_simulation' => $this->simulateMitigation($data, $residualRisk),
+            'classification_was_raised' => $this->classificationWasRaised($residualRisk, $conditions['minimum_level']),
+            'active_controls' => $this->countActiveControls($data),
+            'inactive_controls' => count(self::CONTROL_WEIGHTS) - $this->countActiveControls($data),
+            'internal_residual_risk' => $this->calculateInternalRisk($initialRisk, $reduction),
         ];
     }
 
@@ -303,7 +349,7 @@ class Equipo1Controller extends Controller
      */
     private function errorResponse(string $message, int $status, array $errors = []): JsonResponse
     {
-        $response = ['success' => false, 'message' => $message];
+        $response = ['success' => false, 'message' => $message, 'error_code' => $this->getErrorCode($status)];
 
         if ($errors !== []) {
             $response['errors'] = $errors;
