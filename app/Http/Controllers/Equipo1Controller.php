@@ -192,6 +192,11 @@ class Equipo1Controller extends Controller
             $findings[] = 'Aplicación web expuesta sin MFA y sin parches.';
         }
 
+        if ($data['asset_type'] === 'network' && $data['criticality'] >= 4 && $data['internet_exposed'] && ! $data['monitoring_enabled']) {
+            $minimumLevel = max($minimumLevel, 1);
+            $findings[] = 'Red crítica expuesta sin monitoreo.';
+        }
+
         if ($data['internet_exposed'] && ! $data['monitoring_enabled']) {
             $observations[] = 'El sistema está expuesto a Internet sin monitoreo.';
         }
@@ -238,6 +243,70 @@ class Equipo1Controller extends Controller
 
     /**
      * @param  RiskInput  $data
+     * @return array{current_risk: int, projected_risk: int, risk_difference: int, projected_level: string}
+     */
+    public function simulateMitigation(array $data, int $currentRisk): array
+    {
+        // La simulación modifica una copia y conserva el escenario original.
+        $projectedData = $data;
+
+        foreach (array_keys(self::CONTROL_WEIGHTS) as $control) {
+            $projectedData[$control] = true;
+        }
+
+        $initialRisk = $this->calculateInitialRisk($data['criticality'], $data['probability'], $data['impact']);
+        $adjustedTenths = $this->calculateExposure($initialRisk, $data['internet_exposed']);
+        $reduction = $this->calculateReduction($projectedData);
+        $projectedRisk = $this->calculateResidualRisk($adjustedTenths, $reduction);
+        $conditions = $this->detectCriticalConditions($projectedData);
+
+        return [
+            'current_risk' => $currentRisk,
+            'projected_risk' => $projectedRisk,
+            'risk_difference' => $currentRisk - $projectedRisk,
+            'projected_level' => $this->classifyRisk($projectedRisk, $conditions['minimum_level']),
+        ];
+    }
+
+    public function calculateInternalRisk(int $initialRisk, int $reduction): int
+    {
+        return $this->calculateResidualRisk($this->calculateExposure($initialRisk, false), $reduction);
+    }
+
+    /**
+     * @param  RiskInput  $data
+     */
+    public function countActiveControls(array $data): int
+    {
+        $active = 0;
+
+        foreach (array_keys(self::CONTROL_WEIGHTS) as $control) {
+            if ($data[$control]) {
+                $active++;
+            }
+        }
+
+        return $active;
+    }
+
+    public function classificationWasRaised(int $score, int $minimumLevel): bool
+    {
+        return $this->classifyRisk($score) !== $this->classifyRisk($score, $minimumLevel);
+    }
+
+    public function getErrorCode(int $status): string
+    {
+        return match ($status) {
+            400 => 'INVALID_JSON',
+            413 => 'PAYLOAD_TOO_LARGE',
+            415 => 'INVALID_CONTENT_TYPE',
+            422 => 'VALIDATION_ERROR',
+            default => 'INTERNAL_ERROR',
+        };
+    }
+
+    /**
+     * @param  RiskInput  $data
      * @return array<string, mixed>
      */
     public function assess(array $data): array
@@ -267,6 +336,11 @@ class Equipo1Controller extends Controller
             'critical_findings' => $conditions['findings'],
             'observations' => $conditions['observations'],
             ...$this->generateRecommendations($data),
+            'mitigation_simulation' => $this->simulateMitigation($data, $residualRisk),
+            'classification_was_raised' => $this->classificationWasRaised($residualRisk, $conditions['minimum_level']),
+            'active_controls' => $this->countActiveControls($data),
+            'inactive_controls' => count(self::CONTROL_WEIGHTS) - $this->countActiveControls($data),
+            'internal_residual_risk' => $this->calculateInternalRisk($initialRisk, $reduction),
         ];
     }
 
@@ -275,7 +349,7 @@ class Equipo1Controller extends Controller
      */
     private function errorResponse(string $message, int $status, array $errors = []): JsonResponse
     {
-        $response = ['success' => false, 'message' => $message];
+        $response = ['success' => false, 'message' => $message, 'error_code' => $this->getErrorCode($status)];
 
         if ($errors !== []) {
             $response['errors'] = $errors;
