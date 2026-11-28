@@ -263,6 +263,13 @@ class Equipo1Controller extends Controller
         ];
     }
 
+    public function calculateInternalRisk(int $initialRisk, int $reduction): int
+    {
+        return $this->calculateResidualRisk(
+            $this->calculateExposure($initialRisk, false), $reduction
+        );
+    }
+
     /**
      * @param  RiskInput  $data
      * @return array<string, mixed>
@@ -273,6 +280,7 @@ class Equipo1Controller extends Controller
         $adjustedTenths = $this->calculateExposure($initialRisk, $data['internet_exposed']);
         $reduction = $this->calculateReduction($data);
         $residualRisk = $this->calculateResidualRisk($adjustedTenths, $reduction);
+        $internalResidualRisk = $this->calculateInternalRisk($initialRisk, $reduction);
         $conditions = $this->detectCriticalConditions($data);
         $level = $this->classifyRisk($residualRisk, $conditions['minimum_level']);
 
@@ -289,6 +297,8 @@ class Equipo1Controller extends Controller
             'adjusted_risk' => $adjustedTenths / 10,
             'risk_reduction_percentage' => $reduction,
             'residual_risk' => $residualRisk,
+            'internal_residual_risk' => $internalResidualRisk,
+            'exposure_risk_difference' => $residualRisk - $internalResidualRisk,
             'risk_level' => $level,
             'security_status' => $status,
             'critical_findings' => $conditions['findings'],

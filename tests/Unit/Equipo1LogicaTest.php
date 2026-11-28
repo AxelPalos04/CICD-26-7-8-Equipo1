@@ -22,6 +22,20 @@ class Equipo1LogicaTest extends TestCase
         $this->assertSame(90, $controller->calculateResidualRisk(1200, 25));
     }
 
+    public function test_internal_risk_applies_security_reduction(): void
+    {
+        $controller = new Equipo1Controller;
+
+        $this->assertSame(75, $controller->calculateInternalRisk(100, 25));
+    }
+
+    public function test_internal_risk_without_security_reduction(): void
+    {
+        $controller = new Equipo1Controller;
+
+        $this->assertSame(125, $controller->calculateInternalRisk(125, 0));
+    }
+
     private function riskPayload(): array
     {
         return [

@@ -39,6 +39,27 @@ class Equipo1ApiTest extends TestCase
             ->assertJsonStructure(['critical_findings', 'observations', 'recommendations']);
     }
 
+    public function test_api_calculates_risk_difference_for_exposed_asset(): void
+    {
+        $this->postJson(self::ENDPOINT, $this->validPayload())
+            ->assertOk()
+            ->assertJsonPath('residual_risk', 90)
+            ->assertJsonPath('internal_residual_risk', 75)
+            ->assertJsonPath('exposure_risk_difference', 15);
+    }
+
+    public function test_api_reports_zero_exposure_difference_for_internal_asset(): void
+    {
+        $payload = $this->validPayload();
+        $payload['internet_exposed'] = false;
+
+        $this->postJson(self::ENDPOINT, $payload)
+            ->assertOk()
+            ->assertJsonPath('residual_risk', 75)
+            ->assertJsonPath('internal_residual_risk', 75)
+            ->assertJsonPath('exposure_risk_difference', 0);
+    }
+
     public function test_api_rejects_a_numeric_string(): void
     {
         $payload = $this->validPayload();
